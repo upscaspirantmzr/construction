@@ -271,25 +271,18 @@
                 expensesTableBody.innerHTML = ''; // Clear previous data
                 const expenses = [];
                 const users = {}; // Cache for user data to avoid redundant reads
-
-                const userPromises = querySnapshot.docs.map(doc => {
-                    const managerId = doc.data().managerId;
-                    if (!users[managerId]) {
-                        users[managerId] = getDocs(query(collection(db, 'users'), where('__name__', '==', managerId))).then(userSnapshot => {
-                            if (!userSnapshot.empty) {
-                                return userSnapshot.docs[0].data();
-                            }
-                            return null;
-                        });
-                    }
-                    return users[managerId];
+                
+                // Fetch all managers and cache them
+                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+                const managersSnapshot = await getDocs(managersQuery);
+                const managerMap = {};
+                managersSnapshot.forEach(doc => {
+                    managerMap[doc.id] = doc.data();
                 });
-
-                await Promise.all(userPromises);
 
                 querySnapshot.forEach(doc => {
                     const expense = doc.data();
-                    const managerData = users[expense.managerId];
+                    const managerData = managerMap[expense.managerId];
                     const managerName = managerData ? managerData.name : 'Unknown';
                     const siteName = managerData ? managerData.siteName : 'Unknown';
 
