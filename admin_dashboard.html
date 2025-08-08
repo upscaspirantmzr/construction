@@ -29,9 +29,38 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div class="px-4 py-6 sm:px-0">
+        <div class="px-4 py-6 sm:px-0 space-y-8">
+            <!-- Add New Manager Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Add New Manager</h2>
+                <div id="add-manager-message-box" class="hidden p-3 mb-4 rounded-lg text-sm" role="alert"></div>
+                <form id="add-manager-form" class="space-y-4">
+                    <div>
+                        <label for="manager-name" class="block text-sm font-medium text-gray-700">Manager Name</label>
+                        <input type="text" id="manager-name" name="manager-name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="manager-email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                        <input type="email" id="manager-email" name="manager-email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="manager-password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="manager-password" name="manager-password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="manager-site-name" class="block text-sm font-medium text-gray-700">Assigned Site Name</label>
+                        <input type="text" id="manager-site-name" name="manager-site-name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            Add Manager
+                        </button>
+                    </div>
+                </form>
+            </div>
+
             <!-- Projects Section -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Projects & Managers</h2>
                 <div id="projects-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- Project cards will be dynamically added here -->
@@ -65,8 +94,8 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, getDocs, onSnapshot, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, getDocs, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { firebaseConfig } from "./firebase_config.js";
 
         // Initialize Firebase
@@ -80,12 +109,21 @@
         const projectsList = document.getElementById('projects-list');
         const expensesTableBody = document.getElementById('expenses-table-body');
         const messageBox = document.getElementById('message-box');
+        const addManagerForm = document.getElementById('add-manager-form');
+        const addManagerMessageBox = document.getElementById('add-manager-message-box');
 
-        // Function to show messages
+        // Function to show messages in the main message box
         const showMessage = (text, type = 'error') => {
             messageBox.textContent = text;
             messageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
             messageBox.classList.remove('hidden');
+        };
+
+        // Function to show messages in the add manager message box
+        const showAddManagerMessage = (text, type = 'error') => {
+            addManagerMessageBox.textContent = text;
+            addManagerMessageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
+            addManagerMessageBox.classList.remove('hidden');
         };
 
         // Auth state listener
@@ -110,6 +148,62 @@
             }
         });
 
+        // Handle adding a new manager
+        addManagerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = addManagerForm['manager-name'].value;
+            const email = addManagerForm['manager-email'].value;
+            const password = addManagerForm['manager-password'].value;
+            const siteName = addManagerForm['manager-site-name'].value;
+
+            if (!name || !email || !password || !siteName) {
+                showAddManagerMessage("Please fill in all fields.");
+                return;
+            }
+
+            try {
+                // 1. Create user in Firebase Authentication
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const newUser = userCredential.user;
+
+                // 2. Add user details to Firestore
+                const userDocRef = doc(db, 'users', newUser.uid);
+                await setDoc(userDocRef, {
+                    name: name,
+                    email: email,
+                    role: 'manager',
+                    siteName: siteName
+                });
+
+                // 3. Add a new project to the projects collection
+                await setDoc(doc(db, 'projects', newUser.uid), {
+                    siteName: siteName,
+                    location: "Not specified yet", // Default value
+                    managerId: newUser.uid
+                });
+
+                showAddManagerMessage(`Manager ${name} added successfully!`, 'success');
+                addManagerForm.reset(); // Clear the form
+            } catch (error) {
+                console.error("Error adding new manager:", error);
+                let errorMessage = "An error occurred. Please try again.";
+                switch (error.code) {
+                    case 'auth/email-already-in-use':
+                        errorMessage = "This email is already in use.";
+                        break;
+                    case 'auth/invalid-email':
+                        errorMessage = "Invalid email address.";
+                        break;
+                    case 'auth/weak-password':
+                        errorMessage = "Password is too weak. Must be at least 6 characters.";
+                        break;
+                    default:
+                        errorMessage = error.message;
+                }
+                showAddManagerMessage(errorMessage);
+            }
+        });
+
         // Fetch projects and managers
         const fetchProjectsAndManagers = () => {
             const projectsQuery = query(collection(db, 'projects'));
@@ -121,10 +215,9 @@
 
                     if (project.managerId) {
                         try {
-                            const managerQuery = query(collection(db, 'users'), where('uid', '==', project.managerId));
-                            const managerSnapshot = await getDocs(managerQuery);
-                            if (!managerSnapshot.empty) {
-                                managerName = managerSnapshot.docs[0].data().name;
+                            const managerDoc = await getDoc(doc(db, 'users', project.managerId));
+                            if (managerDoc.exists()) {
+                                managerName = managerDoc.data().name;
                             }
                         } catch (error) {
                             console.error("Error fetching manager details:", error);
@@ -149,27 +242,33 @@
             onSnapshot(expensesQuery, async (querySnapshot) => {
                 expensesTableBody.innerHTML = ''; // Clear previous data
                 const expenses = [];
+                const users = {}; // Cache for user data to avoid redundant reads
 
-                // Fetch all unique managers for the expenses
-                const managerPromises = querySnapshot.docs.map(async (doc) => {
-                    const expense = doc.data();
-                    const managerDoc = await getDoc(doc(db, 'users', expense.managerId));
-                    if (managerDoc.exists()) {
-                        const managerData = managerDoc.data();
-                        return { id: managerDoc.id, name: managerData.name, site: managerData.siteName };
+                const userPromises = querySnapshot.docs.map(doc => {
+                    const managerId = doc.data().managerId;
+                    if (!users[managerId]) {
+                        users[managerId] = getDoc(doc(db, 'users', managerId)).then(userDoc => {
+                            if (userDoc.exists()) {
+                                return userDoc.data();
+                            }
+                            return null;
+                        });
                     }
-                    return { id: expense.managerId, name: 'Unknown', site: 'Unknown' };
+                    return users[managerId];
                 });
 
-                const managers = await Promise.all(managerPromises);
+                await Promise.all(userPromises);
 
                 querySnapshot.forEach(doc => {
                     const expense = doc.data();
-                    const manager = managers.find(m => m.id === expense.managerId);
+                    const managerData = users[expense.managerId];
+                    const managerName = managerData ? managerData.name : 'Unknown';
+                    const siteName = managerData ? managerData.siteName : 'Unknown';
+
                     expenses.push({
                         date: expense.date,
-                        managerName: manager ? manager.name : 'Unknown',
-                        siteName: manager ? manager.siteName : 'Unknown',
+                        managerName: managerName,
+                        siteName: siteName,
                         description: expense.description,
                         amount: expense.amount
                     });
