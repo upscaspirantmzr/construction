@@ -190,7 +190,6 @@
 
                 showAddProjectMessage(`Project ${siteName} created and manager assigned successfully!`, 'success');
                 addProjectForm.reset(); // Clear the form
-                populateManagerSelect(); // Refresh the list of managers
             } catch (error) {
                 console.error("Error creating new project:", error);
                 showAddProjectMessage("Failed to create project. Please try again.");
@@ -198,18 +197,17 @@
         });
 
         // Populate the manager dropdown with unassigned managers
-        const populateManagerSelect = async () => {
+        const populateManagerSelect = () => {
             projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
-            try {
-                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
-                const querySnapshot = await getDocs(managersQuery);
+            // Create a real-time listener for unassigned managers
+            const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'), where('siteName', '==', 'Unassigned'));
+            
+            onSnapshot(managersQuery, (querySnapshot) => {
+                projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
                 const unassignedManagers = [];
                 querySnapshot.forEach(doc => {
                     const manager = doc.data();
-                    // Only add managers who are 'Unassigned'
-                    if (manager.siteName === 'Unassigned') {
-                        unassignedManagers.push({ id: doc.id, name: manager.name });
-                    }
+                    unassignedManagers.push({ id: doc.id, name: manager.name });
                 });
 
                 unassignedManagers.forEach(manager => {
@@ -225,11 +223,10 @@
                     option.disabled = true;
                     projectManagerSelect.appendChild(option);
                 }
-
-            } catch (error) {
+            }, (error) => {
                 console.error("Error populating managers:", error);
                 showAddProjectMessage("Failed to load managers.");
-            }
+            });
         };
 
         // Fetch projects and managers
