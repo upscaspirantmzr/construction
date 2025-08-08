@@ -10,17 +10,18 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
         }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 min-h-screen">
     <!-- Navbar -->
-    <header class="bg-white shadow">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+    <header class="bg-white shadow-md">
+        <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center">
             <h1 class="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-            <div class="flex items-center space-x-4">
-                <span id="welcome-message" class="text-gray-600"></span>
-                <button id="logout-button" class="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+            <div class="flex items-center space-x-4 mt-2 sm:mt-0">
+                <span id="welcome-message" class="text-gray-600">Loading...</span>
+                <button id="logout-button" class="py-2 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
                     Logout
                 </button>
             </div>
@@ -30,10 +31,12 @@
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div class="px-4 py-6 sm:px-0 space-y-8">
+            <!-- Global Message Box -->
+            <div id="global-message-box" class="hidden p-4 rounded-lg text-sm transition-opacity duration-300"></div>
+
             <!-- Create New Project Section -->
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="bg-white rounded-xl shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Create New Project</h2>
-                <div id="add-project-message-box" class="hidden p-3 mb-4 rounded-lg text-sm" role="alert"></div>
                 <form id="add-project-form" class="space-y-4">
                     <div>
                         <label for="project-site-name" class="block text-sm font-medium text-gray-700">Project Site Name</label>
@@ -46,20 +49,20 @@
                     <div>
                         <label for="project-manager" class="block text-sm font-medium text-gray-700">Assign Manager</label>
                         <select id="project-manager" name="project-manager" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                            <option value="">Select a manager</option>
-                            <!-- Managers will be populated here -->
+                            <option value="">Loading managers...</option>
+                            <!-- Managers will be populated here dynamically -->
                         </select>
                     </div>
                     <div>
-                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
                             Create Project
                         </button>
                     </div>
                 </form>
             </div>
 
-            <!-- Projects Section -->
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <!-- Projects & Managers Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Projects & Managers</h2>
                 <div id="projects-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <p class="text-center text-gray-500">Loading projects...</p>
@@ -67,11 +70,10 @@
                 </div>
             </div>
 
-            <!-- Expenses Section -->
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <!-- Daily Expenses Report Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Daily Expenses Report</h2>
-                <div id="message-box" class="hidden p-3 mb-4 rounded-lg text-sm bg-red-100 text-red-700" role="alert"></div>
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto rounded-lg">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
@@ -96,7 +98,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, getDocs, onSnapshot, doc, setDoc, where, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, getDocs, onSnapshot, doc, setDoc, updateDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // This is a global variable provided by the Canvas environment.
         const firebaseConfig = JSON.parse(__firebase_config);
@@ -111,41 +113,44 @@
         const logoutButton = document.getElementById('logout-button');
         const projectsList = document.getElementById('projects-list');
         const expensesTableBody = document.getElementById('expenses-table-body');
-        const messageBox = document.getElementById('message-box');
         const addProjectForm = document.getElementById('add-project-form');
-        const addProjectMessageBox = document.getElementById('add-project-message-box');
         const projectManagerSelect = document.getElementById('project-manager');
+        const globalMessageBox = document.getElementById('global-message-box');
 
-        // Function to show messages in the main message box
-        const showMessage = (text, type = 'error') => {
-            messageBox.textContent = text;
-            messageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
-            messageBox.classList.remove('hidden');
+        /**
+         * Displays a temporary message to the user.
+         * @param {string} text The message to display.
+         * @param {string} type The type of message ('success' or 'error').
+         */
+        const showGlobalMessage = (text, type = 'error') => {
+            globalMessageBox.textContent = text;
+            globalMessageBox.className = `p-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
+            globalMessageBox.classList.remove('hidden');
+            setTimeout(() => {
+                globalMessageBox.classList.add('hidden');
+            }, 5000);
         };
 
-        // Function to show messages in the add project message box
-        const showAddProjectMessage = (text, type = 'error') => {
-            addProjectMessageBox.textContent = text;
-            addProjectMessageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
-            addProjectMessageBox.classList.remove('hidden');
-        };
-
-        // Auth state listener
+        // Auth state listener to check if the user is an admin
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // Check user's role
+                // Listen for changes to the user's document in real-time
                 const userDocRef = doc(db, 'users', user.uid);
                 onSnapshot(userDocRef, (docSnap) => {
                     if (docSnap.exists() && docSnap.data().role === 'admin') {
                         const userData = docSnap.data();
-                        console.log("Admin user data retrieved:", userData); // Added for debugging
+                        // Display welcome message from user data
                         welcomeMessage.textContent = `Welcome, ${userData.name || 'Admin'}!`;
+                        
+                        // Start real-time data listeners for the rest of the dashboard
                         fetchProjectsAndManagers();
                         fetchDailyExpenses();
                         populateManagerSelect();
                     } else {
-                        // If not an admin or user data is missing, redirect to login
-                        window.location.href = 'index.html';
+                        // If not an admin, sign out and redirect to login
+                        signOut(auth).then(() => {
+                            window.location.href = 'index.html';
+                        });
                     }
                 });
             } else {
@@ -154,7 +159,7 @@
             }
         });
 
-        // Handle creating a new project
+        // Handles the form submission to create a new project
         addProjectForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const siteName = addProjectForm['project-site-name'].value;
@@ -162,7 +167,7 @@
             const managerId = addProjectForm['project-manager'].value;
 
             if (!siteName || !location || !managerId) {
-                showAddProjectMessage("Please fill in all fields.");
+                showGlobalMessage("Please fill in all fields.");
                 return;
             }
 
@@ -171,7 +176,7 @@
                 const projectsQuery = query(collection(db, 'projects'), where('siteName', '==', siteName));
                 const projectsSnapshot = await getDocs(projectsQuery);
                 if (!projectsSnapshot.empty) {
-                    showAddProjectMessage("A project with this site name already exists.");
+                    showGlobalMessage("A project with this site name already exists.");
                     return;
                 }
                 
@@ -189,21 +194,21 @@
                     siteName: siteName
                 });
 
-                showAddProjectMessage(`Project ${siteName} created and manager assigned successfully!`, 'success');
+                showGlobalMessage(`Project '${siteName}' created and manager assigned successfully!`, 'success');
                 addProjectForm.reset(); // Clear the form
             } catch (error) {
                 console.error("Error creating new project:", error);
-                showAddProjectMessage("Failed to create project. Please try again.");
+                showGlobalMessage("Failed to create project. Please try again.");
             }
         });
 
-        // Populate the manager dropdown with unassigned managers
+        /**
+         * Populates the manager dropdown with unassigned managers in real-time.
+         */
         const populateManagerSelect = () => {
-            projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
-            // This is a real-time listener for managers who have not been assigned to a project yet.
-            // It will update automatically as managers are added or assigned.
             const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'), where('siteName', '==', 'Unassigned'));
             
+            // onSnapshot provides a real-time listener
             onSnapshot(managersQuery, (querySnapshot) => {
                 projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
                 const unassignedManagers = [];
@@ -227,17 +232,19 @@
                 }
             }, (error) => {
                 console.error("Error populating managers:", error);
-                showAddProjectMessage("Failed to load managers.");
+                showGlobalMessage("Failed to load managers.");
             });
         };
 
-        // Fetch projects and managers
+        /**
+         * Fetches and displays projects and their assigned managers in real-time.
+         */
         const fetchProjectsAndManagers = () => {
-            projectsList.innerHTML = '<p class="text-center text-gray-500">Loading projects...</p>'; // Show loading state
+            projectsList.innerHTML = '<p class="text-center text-gray-500">Loading projects...</p>';
             const projectsQuery = query(collection(db, 'projects'));
             onSnapshot(projectsQuery, async (querySnapshot) => {
                 try {
-                    projectsList.innerHTML = ''; // Clear previous projects
+                    projectsList.innerHTML = '';
                     if (querySnapshot.empty) {
                         projectsList.innerHTML = `<p class="text-center text-gray-500">No projects found.</p>`;
                         return;
@@ -270,25 +277,27 @@
                     });
                 } catch (error) {
                     console.error("Error fetching projects:", error);
+                    showGlobalMessage("Failed to load projects. Please check your data and permissions.");
                     projectsList.innerHTML = `<p class="text-center text-red-500">Failed to load projects. Please check your data and permissions.</p>`;
                 }
             });
         };
 
-        // Fetch and display daily expenses
+        /**
+         * Fetches and displays daily expenses in a real-time table.
+         */
         const fetchDailyExpenses = () => {
-            expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading expenses...</td></tr>`; // Show loading state
+            expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading expenses...</td></tr>`;
             const expensesQuery = query(collection(db, 'expenses'));
             onSnapshot(expensesQuery, async (querySnapshot) => {
                 try {
-                    expensesTableBody.innerHTML = ''; // Clear previous data
-                    const expenses = [];
-                    
+                    expensesTableBody.innerHTML = '';
                     if (querySnapshot.empty) {
                         expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No expenses found.</td></tr>`;
                         return;
                     }
 
+                    const expenses = [];
                     // Fetch all managers and cache them
                     const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
                     const managersSnapshot = await getDocs(managersQuery);
@@ -329,6 +338,7 @@
                     });
                 } catch (error) {
                     console.error("Error fetching expenses:", error);
+                    showGlobalMessage("Failed to load expenses. Please check your data and permissions.");
                     expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Failed to load expenses. Please check your data and permissions.</td></tr>`;
                 }
             });
@@ -337,13 +347,10 @@
         // Logout functionality
         logoutButton.addEventListener('click', async () => {
             try {
-                showMessage('Logging out...', 'success');
                 await signOut(auth);
-                console.log("User signed out successfully. Redirecting...");
-                window.location.href = 'index.html'; // Redirect to login page
             } catch (error) {
                 console.error("Logout failed:", error);
-                showMessage('An error occurred during logout. Please try again.');
+                showGlobalMessage('An error occurred during logout. Please try again.');
             }
         });
     </script>
