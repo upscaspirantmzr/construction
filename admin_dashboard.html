@@ -48,12 +48,36 @@
                         <input type="password" id="manager-password" name="manager-password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
-                        <label for="manager-site-name" class="block text-sm font-medium text-gray-700">Assigned Site Name</label>
-                        <input type="text" id="manager-site-name" name="manager-site-name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
                         <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                             Add Manager
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Create New Project Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Create New Project</h2>
+                <div id="add-project-message-box" class="hidden p-3 mb-4 rounded-lg text-sm" role="alert"></div>
+                <form id="add-project-form" class="space-y-4">
+                    <div>
+                        <label for="project-site-name" class="block text-sm font-medium text-gray-700">Project Site Name</label>
+                        <input type="text" id="project-site-name" name="project-site-name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="project-location" class="block text-sm font-medium text-gray-700">Project Location</label>
+                        <input type="text" id="project-location" name="project-location" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="project-manager" class="block text-sm font-medium text-gray-700">Assign Manager</label>
+                        <select id="project-manager" name="project-manager" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                            <option value="">Select a manager</option>
+                            <!-- Managers will be populated here -->
+                        </select>
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Create Project
                         </button>
                     </div>
                 </form>
@@ -95,7 +119,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, getDocs, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, getDocs, onSnapshot, doc, setDoc, where, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { firebaseConfig } from "./firebase_config.js";
 
         // Initialize Firebase
@@ -111,6 +135,9 @@
         const messageBox = document.getElementById('message-box');
         const addManagerForm = document.getElementById('add-manager-form');
         const addManagerMessageBox = document.getElementById('add-manager-message-box');
+        const addProjectForm = document.getElementById('add-project-form');
+        const addProjectMessageBox = document.getElementById('add-project-message-box');
+        const projectManagerSelect = document.getElementById('project-manager');
 
         // Function to show messages in the main message box
         const showMessage = (text, type = 'error') => {
@@ -126,6 +153,13 @@
             addManagerMessageBox.classList.remove('hidden');
         };
 
+        // Function to show messages in the add project message box
+        const showAddProjectMessage = (text, type = 'error') => {
+            addProjectMessageBox.textContent = text;
+            addProjectMessageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
+            addProjectMessageBox.classList.remove('hidden');
+        };
+
         // Auth state listener
         onAuthStateChanged(auth, async (user) => {
             if (user) {
@@ -137,6 +171,7 @@
                         welcomeMessage.textContent = `Welcome, ${userData.name || 'Admin'}!`;
                         fetchProjectsAndManagers();
                         fetchDailyExpenses();
+                        populateManagerSelect();
                     } else {
                         // If not an admin or user data is missing, redirect to login
                         window.location.href = 'index.html';
@@ -154,9 +189,8 @@
             const name = addManagerForm['manager-name'].value;
             const email = addManagerForm['manager-email'].value;
             const password = addManagerForm['manager-password'].value;
-            const siteName = addManagerForm['manager-site-name'].value;
 
-            if (!name || !email || !password || !siteName) {
+            if (!name || !email || !password) {
                 showAddManagerMessage("Please fill in all fields.");
                 return;
             }
@@ -172,18 +206,12 @@
                     name: name,
                     email: email,
                     role: 'manager',
-                    siteName: siteName
-                });
-
-                // 3. Add a new project to the projects collection
-                await setDoc(doc(db, 'projects', newUser.uid), {
-                    siteName: siteName,
-                    location: "Not specified yet", // Default value
-                    managerId: newUser.uid
+                    siteName: 'Unassigned' // Set to unassigned by default
                 });
 
                 showAddManagerMessage(`Manager ${name} added successfully!`, 'success');
                 addManagerForm.reset(); // Clear the form
+                populateManagerSelect(); // Refresh the list of managers
             } catch (error) {
                 console.error("Error adding new manager:", error);
                 let errorMessage = "An error occurred. Please try again.";
@@ -204,24 +232,105 @@
             }
         });
 
+        // Handle creating a new project
+        addProjectForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const siteName = addProjectForm['project-site-name'].value;
+            const location = addProjectForm['project-location'].value;
+            const managerId = addProjectForm['project-manager'].value;
+
+            if (!siteName || !location || !managerId) {
+                showAddProjectMessage("Please fill in all fields.");
+                return;
+            }
+
+            try {
+                // Check if a project with this site name already exists
+                const projectsQuery = query(collection(db, 'projects'), where('siteName', '==', siteName));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                if (!projectsSnapshot.empty) {
+                    showAddProjectMessage("A project with this site name already exists.");
+                    return;
+                }
+                
+                // 1. Create a new project document
+                const newProjectRef = doc(collection(db, 'projects'));
+                await setDoc(newProjectRef, {
+                    siteName: siteName,
+                    location: location,
+                    managerId: managerId
+                });
+
+                // 2. Update the manager's user document with the new site name
+                const managerDocRef = doc(db, 'users', managerId);
+                await updateDoc(managerDocRef, {
+                    siteName: siteName
+                });
+
+                showAddProjectMessage(`Project ${siteName} created and manager assigned successfully!`, 'success');
+                addProjectForm.reset(); // Clear the form
+                populateManagerSelect(); // Refresh the list of managers
+            } catch (error) {
+                console.error("Error creating new project:", error);
+                showAddProjectMessage("Failed to create project. Please try again.");
+            }
+        });
+
+        // Populate the manager dropdown with unassigned managers
+        const populateManagerSelect = async () => {
+            projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
+            try {
+                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+                const querySnapshot = await getDocs(managersQuery);
+                const unassignedManagers = [];
+                querySnapshot.forEach(doc => {
+                    const manager = doc.data();
+                    // Only add managers who are 'Unassigned'
+                    if (manager.siteName === 'Unassigned') {
+                        unassignedManagers.push({ id: doc.id, name: manager.name });
+                    }
+                });
+
+                unassignedManagers.forEach(manager => {
+                    const option = document.createElement('option');
+                    option.value = manager.id;
+                    option.textContent = manager.name;
+                    projectManagerSelect.appendChild(option);
+                });
+
+                if (unassignedManagers.length === 0) {
+                    const option = document.createElement('option');
+                    option.textContent = 'No unassigned managers';
+                    option.disabled = true;
+                    projectManagerSelect.appendChild(option);
+                }
+
+            } catch (error) {
+                console.error("Error populating managers:", error);
+                showAddProjectMessage("Failed to load managers.");
+            }
+        };
+
         // Fetch projects and managers
-        const fetchProjectsAndManagers = () => {
+        const fetchProjectsAndManagers = async () => {
             const projectsQuery = query(collection(db, 'projects'));
-            onSnapshot(projectsQuery, (querySnapshot) => {
+            onSnapshot(projectsQuery, async (querySnapshot) => {
                 projectsList.innerHTML = ''; // Clear previous projects
-                querySnapshot.forEach(async (projectDoc) => {
+
+                // Fetch all managers once to avoid redundant reads
+                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+                const managersSnapshot = await getDocs(managersQuery);
+                const managerMap = {};
+                managersSnapshot.forEach(doc => {
+                    managerMap[doc.id] = doc.data();
+                });
+
+                querySnapshot.forEach(projectDoc => {
                     const project = projectDoc.data();
                     let managerName = 'Unassigned';
 
-                    if (project.managerId) {
-                        try {
-                            const managerDoc = await getDoc(doc(db, 'users', project.managerId));
-                            if (managerDoc.exists()) {
-                                managerName = managerDoc.data().name;
-                            }
-                        } catch (error) {
-                            console.error("Error fetching manager details:", error);
-                        }
+                    if (project.managerId && managerMap[project.managerId]) {
+                        managerName = managerMap[project.managerId].name;
                     }
                     
                     const cardHtml = `
@@ -247,9 +356,9 @@
                 const userPromises = querySnapshot.docs.map(doc => {
                     const managerId = doc.data().managerId;
                     if (!users[managerId]) {
-                        users[managerId] = getDoc(doc(db, 'users', managerId)).then(userDoc => {
-                            if (userDoc.exists()) {
-                                return userDoc.data();
+                        users[managerId] = getDocs(query(collection(db, 'users'), where('__name__', '==', managerId))).then(userSnapshot => {
+                            if (!userSnapshot.empty) {
+                                return userSnapshot.docs[0].data();
                             }
                             return null;
                         });
@@ -306,7 +415,6 @@
                 showMessage('An error occurred during logout. Please try again.');
             }
         });
-
     </script>
 </body>
 </html>
