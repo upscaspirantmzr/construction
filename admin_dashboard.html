@@ -138,6 +138,7 @@
                 onSnapshot(userDocRef, (docSnap) => {
                     if (docSnap.exists() && docSnap.data().role === 'admin') {
                         const userData = docSnap.data();
+                        console.log("Admin user data retrieved:", userData); // Added for debugging
                         welcomeMessage.textContent = `Welcome, ${userData.name || 'Admin'}!`;
                         fetchProjectsAndManagers();
                         fetchDailyExpenses();
@@ -199,7 +200,8 @@
         // Populate the manager dropdown with unassigned managers
         const populateManagerSelect = () => {
             projectManagerSelect.innerHTML = '<option value="">Select a manager</option>';
-            // Create a real-time listener for unassigned managers
+            // This is a real-time listener for managers who have not been assigned to a project yet.
+            // It will update automatically as managers are added or assigned.
             const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'), where('siteName', '==', 'Unassigned'));
             
             onSnapshot(managersQuery, (querySnapshot) => {
