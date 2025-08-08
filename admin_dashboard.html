@@ -62,6 +62,7 @@
             <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Projects & Managers</h2>
                 <div id="projects-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <p class="text-center text-gray-500">Loading projects...</p>
                     <!-- Project cards will be dynamically added here -->
                 </div>
             </div>
@@ -82,6 +83,7 @@
                             </tr>
                         </thead>
                         <tbody id="expenses-table-body" class="bg-white divide-y divide-gray-200">
+                             <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading expenses...</td></tr>
                             <!-- Expense rows will be dynamically added here -->
                         </tbody>
                     </table>
@@ -231,76 +233,89 @@
         };
 
         // Fetch projects and managers
-        const fetchProjectsAndManagers = async () => {
+        const fetchProjectsAndManagers = () => {
+            projectsList.innerHTML = '<p class="text-center text-gray-500">Loading projects...</p>'; // Show loading state
             const projectsQuery = query(collection(db, 'projects'));
             onSnapshot(projectsQuery, async (querySnapshot) => {
-                projectsList.innerHTML = ''; // Clear previous projects
-
-                // Fetch all managers once to avoid redundant reads
-                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
-                const managersSnapshot = await getDocs(managersQuery);
-                const managerMap = {};
-                managersSnapshot.forEach(doc => {
-                    managerMap[doc.id] = doc.data();
-                });
-
-                querySnapshot.forEach(projectDoc => {
-                    const project = projectDoc.data();
-                    let managerName = 'Unassigned';
-
-                    if (project.managerId && managerMap[project.managerId]) {
-                        managerName = managerMap[project.managerId].name;
+                try {
+                    projectsList.innerHTML = ''; // Clear previous projects
+                    if (querySnapshot.empty) {
+                        projectsList.innerHTML = `<p class="text-center text-gray-500">No projects found.</p>`;
+                        return;
                     }
-                    
-                    const cardHtml = `
-                        <div class="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-semibold text-gray-800">${project.siteName}</h3>
-                            <p class="text-sm text-gray-600 mt-1">Manager: <span class="font-medium text-gray-700">${managerName}</span></p>
-                            <p class="text-sm text-gray-600">Location: <span class="font-medium text-gray-700">${project.location}</span></p>
-                        </div>
-                    `;
-                    projectsList.innerHTML += cardHtml;
-                });
+
+                    // Fetch all managers once to avoid redundant reads
+                    const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+                    const managersSnapshot = await getDocs(managersQuery);
+                    const managerMap = {};
+                    managersSnapshot.forEach(doc => {
+                        managerMap[doc.id] = doc.data();
+                    });
+
+                    querySnapshot.forEach(projectDoc => {
+                        const project = projectDoc.data();
+                        let managerName = 'Unassigned';
+
+                        if (project.managerId && managerMap[project.managerId]) {
+                            managerName = managerMap[project.managerId].name;
+                        }
+                        
+                        const cardHtml = `
+                            <div class="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200">
+                                <h3 class="text-lg font-semibold text-gray-800">${project.siteName}</h3>
+                                <p class="text-sm text-gray-600 mt-1">Manager: <span class="font-medium text-gray-700">${managerName}</span></p>
+                                <p class="text-sm text-gray-600">Location: <span class="font-medium text-gray-700">${project.location}</span></p>
+                            </div>
+                        `;
+                        projectsList.innerHTML += cardHtml;
+                    });
+                } catch (error) {
+                    console.error("Error fetching projects:", error);
+                    projectsList.innerHTML = `<p class="text-center text-red-500">Failed to load projects. Please check your data and permissions.</p>`;
+                }
             });
         };
 
         // Fetch and display daily expenses
         const fetchDailyExpenses = () => {
+            expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading expenses...</td></tr>`; // Show loading state
             const expensesQuery = query(collection(db, 'expenses'));
             onSnapshot(expensesQuery, async (querySnapshot) => {
-                expensesTableBody.innerHTML = ''; // Clear previous data
-                const expenses = [];
-                const users = {}; // Cache for user data to avoid redundant reads
-                
-                // Fetch all managers and cache them
-                const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
-                const managersSnapshot = await getDocs(managersQuery);
-                const managerMap = {};
-                managersSnapshot.forEach(doc => {
-                    managerMap[doc.id] = doc.data();
-                });
+                try {
+                    expensesTableBody.innerHTML = ''; // Clear previous data
+                    const expenses = [];
+                    
+                    if (querySnapshot.empty) {
+                        expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No expenses found.</td></tr>`;
+                        return;
+                    }
 
-                querySnapshot.forEach(doc => {
-                    const expense = doc.data();
-                    const managerData = managerMap[expense.managerId];
-                    const managerName = managerData ? managerData.name : 'Unknown';
-                    const siteName = managerData ? managerData.siteName : 'Unknown';
-
-                    expenses.push({
-                        date: expense.date,
-                        managerName: managerName,
-                        siteName: siteName,
-                        description: expense.description,
-                        amount: expense.amount
+                    // Fetch all managers and cache them
+                    const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+                    const managersSnapshot = await getDocs(managersQuery);
+                    const managerMap = {};
+                    managersSnapshot.forEach(doc => {
+                        managerMap[doc.id] = doc.data();
                     });
-                });
 
-                // Sort expenses by date in descending order (most recent first)
-                expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    querySnapshot.forEach(doc => {
+                        const expense = doc.data();
+                        const managerData = managerMap[expense.managerId];
+                        const managerName = managerData ? managerData.name : 'Unknown';
+                        const siteName = managerData ? managerData.siteName : 'Unknown';
 
-                if (expenses.length === 0) {
-                    expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No expenses found.</td></tr>`;
-                } else {
+                        expenses.push({
+                            date: expense.date,
+                            managerName: managerName,
+                            siteName: siteName,
+                            description: expense.description,
+                            amount: expense.amount
+                        });
+                    });
+
+                    // Sort expenses by date in descending order (most recent first)
+                    expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+
                     expenses.forEach(expense => {
                         const rowHtml = `
                             <tr>
@@ -313,6 +328,9 @@
                         `;
                         expensesTableBody.innerHTML += rowHtml;
                     });
+                } catch (error) {
+                    console.error("Error fetching expenses:", error);
+                    expensesTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Failed to load expenses. Please check your data and permissions.</td></tr>`;
                 }
             });
         };
@@ -320,7 +338,9 @@
         // Logout functionality
         logoutButton.addEventListener('click', async () => {
             try {
+                showMessage('Logging out...', 'success');
                 await signOut(auth);
+                console.log("User signed out successfully. Redirecting...");
                 window.location.href = 'index.html'; // Redirect to login page
             } catch (error) {
                 console.error("Logout failed:", error);
