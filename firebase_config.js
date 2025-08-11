@@ -1,6 +1,4 @@
-// This file contains your Firebase configuration.
-// You can get this from your Firebase project settings.
-// This is the only file you will need to edit to connect to your project.
+// firebase-config.js
 
 const firebaseConfig = {
   apiKey: "AIzaSyB_L2-UjpymkCwUwuQyjlUxXj7T93KE4KA",
@@ -12,6 +10,4 @@ const firebaseConfig = {
   measurementId: "G-D703VCW38R"
 };
 
-// Do not edit below this line.
-// The code in the other files will reference this `firebaseConfig` variable.
-export { firebaseConfig };
+export const ADMIN_UID = "4nfIleETa7YKGmro3Y7my40N6VJ2";
