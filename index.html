@@ -3,115 +3,879 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Construction Portal Login</title>
-    <!-- Tailwind CSS for styling -->
+    <title>Legum Festum - Annual Law School Festival</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-    </style>
-</head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Portal Login</h1>
-        
-        <div id="message-box" class="hidden p-3 mb-4 rounded-lg text-sm" role="alert"></div>
-
-        <form id="login-form" class="space-y-4">
-            <div>
-                <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
-                <input type="email" id="email" name="email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            </div>
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                <input type="password" id="password" name="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            </div>
-            <div>
-                <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                    Login
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <!-- Firebase SDKs -->
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    
+    <!-- Import Firebase config and constants from a separate file -->
+    <!-- The `firebase-config.js` file must be in the same directory -->
     <script type="module">
+        import { firebaseConfig, ADMIN_UID } from './firebase-config.js';
+        
+        // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { firebaseConfig } from "./firebase_config.js";
-
-        // Initialize Firebase
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, addDoc, onSnapshot, collection, serverTimestamp, query, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        
+        let userIsAdmin = false;
+        let eventUnsubscribe = null; // Unsubscribe function for events
+        let messageUnsubscribe = null; // Unsubscribe function for messages
 
-        // UI elements
-        const loginForm = document.getElementById('login-form');
-        const messageBox = document.getElementById('message-box');
-
-        // Function to show messages
-        const showMessage = (text, type = 'error') => {
-            messageBox.textContent = text;
-            messageBox.className = `p-3 mb-4 rounded-lg text-sm ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
-            messageBox.classList.remove('hidden');
+        // --- UI & Page Management Functions ---
+        const showPage = (pageId) => {
+            document.querySelectorAll('#main-app, #admin-login-page, #admin-dashboard-page').forEach(page => {
+                page.style.display = 'none';
+            });
+            document.getElementById(pageId).style.display = 'block';
         };
 
-        // Handle form submission
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = loginForm.email.value;
-            const password = loginForm.password.value;
-
-            // Simple validation
-            if (!email || !password) {
-                showMessage("Please enter both email and password.");
-                return;
+        const updateNavLinks = (isAdmin) => {
+            const authLinksDiv = document.getElementById('auth-links');
+            if (isAdmin) {
+                authLinksDiv.innerHTML = `
+                    <button onclick="showPage('admin-dashboard-page')" class="bg-gray-700 text-white font-bold py-2 px-4 rounded-full hover:bg-gray-600 transition-colors duration-300">Dashboard</button>
+                    <button onclick="handleLogout()" class="bg-red-500 text-white font-bold py-2 px-4 rounded-full hover:bg-red-400 transition-colors duration-300">Logout</button>
+                `;
+            } else {
+                authLinksDiv.innerHTML = `
+                    <button onclick="showPage('admin-login-page')" class="bg-[#ffd700] text-black font-bold py-2 px-4 rounded-full hover:bg-white transition-colors duration-300">Admin Login</button>
+                `;
             }
+        };
 
-            try {
-                // Sign in with email and password
-                const userCredential = await signInWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+        // Display a message box (for success/error)
+        const displayMessage = (msg, type = 'success') => {
+            const messageBox = document.getElementById('message-box');
+            messageBox.className = `message-box ${type}`;
+            messageBox.textContent = msg;
+            setTimeout(() => {
+                messageBox.classList.add('show');
+            }, 10);
+            setTimeout(() => {
+                messageBox.classList.remove('show');
+            }, 3000);
+        };
 
-                // Check the user's role from Firestore
-                const userDocRef = doc(db, 'users', user.uid);
-                const userDocSnap = await getDoc(userDocRef);
+        // --- Firebase Auth & Firestore Functions ---
 
-                if (userDocSnap.exists()) {
-                    const userData = userDocSnap.data();
-                    if (userData.role === 'admin') {
-                        window.location.href = 'admin_dashboard.html';
-                    } else if (userData.role === 'manager') {
-                        window.location.href = 'manager_dashboard.html';
-                    } else {
-                        showMessage('Unknown user role. Please contact support.');
-                    }
-                } else {
-                    showMessage('User data not found. Please contact support.');
-                }
-            } catch (error) {
-                console.error("Login failed:", error);
-                // Display user-friendly error messages
-                let errorMessage = "An error occurred during login. Please try again.";
-                switch (error.code) {
-                    case 'auth/wrong-password':
-                        errorMessage = "Invalid password.";
-                        break;
-                    case 'auth/user-not-found':
-                        errorMessage = "User not found. Please check your email.";
-                        break;
-                    case 'auth/invalid-email':
-                        errorMessage = "Invalid email address.";
-                        break;
-                    default:
-                        errorMessage = error.message;
-                }
-                showMessage(errorMessage);
+        // Listen for authentication state changes
+        onAuthStateChanged(auth, (user) => {
+            if (user && user.uid === ADMIN_UID) {
+                userIsAdmin = true;
+                updateNavLinks(true);
+                // Start listening to admin-specific data (messages)
+                setupMessageListener();
+                console.log("Admin logged in. User ID:", user.uid);
+            } else {
+                userIsAdmin = false;
+                updateNavLinks(false);
+                // Unsubscribe from admin-specific listeners
+                if (messageUnsubscribe) messageUnsubscribe();
+                showPage('main-app'); // Go back to the main page if not an admin or logged out
+                console.log("Not an admin or logged out.");
             }
         });
+
+        const handleLogin = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('admin-email').value;
+            const password = document.getElementById('admin-password').value;
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                if (userCredential.user.uid === ADMIN_UID) {
+                    displayMessage('Login successful!');
+                    showPage('admin-dashboard-page');
+                } else {
+                    displayMessage('You do not have admin privileges.', 'error');
+                    await signOut(auth); // Sign out non-admin user
+                }
+            } catch (error) {
+                displayMessage(`Login failed: ${error.message}`, 'error');
+                console.error("Login Error:", error);
+            }
+        };
+
+        const handleLogout = async () => {
+            try {
+                await signOut(auth);
+                displayMessage('Logged out successfully!');
+            } catch (error) {
+                displayMessage('Error logging out.', 'error');
+                console.error("Logout Error:", error);
+            }
+        };
+
+        const addEvent = async (e) => {
+            e.preventDefault();
+            if (!userIsAdmin) {
+                displayMessage('You must be an admin to add events.', 'error');
+                return;
+            }
+            const eventTitle = document.getElementById('event-title').value;
+            const eventCategory = document.getElementById('event-category').value;
+            const eventTime = document.getElementById('event-time').value;
+            const eventLocation = document.getElementById('event-location').value;
+            const eventImage = document.getElementById('event-image').value;
+            const eventDescription = document.getElementById('event-description').value;
+            
+            try {
+                await addDoc(collection(db, "public-events"), {
+                    title: eventTitle,
+                    category: eventCategory,
+                    time: eventTime,
+                    location: eventLocation,
+                    image: eventImage,
+                    description: eventDescription,
+                    timestamp: serverTimestamp()
+                });
+                displayMessage('Event added successfully!');
+                document.getElementById('add-event-form').reset();
+            } catch (error) {
+                displayMessage('Error adding event. Please try again.', 'error');
+                console.error("Error adding event: ", error);
+            }
+        };
+        
+        const submitContactForm = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const message = document.getElementById('message').value;
+
+            const messagesCollectionPath = `messages-for-admin`; 
+
+            try {
+                await addDoc(collection(db, messagesCollectionPath), {
+                    name: name,
+                    email: email,
+                    message: message,
+                    timestamp: serverTimestamp()
+                });
+                displayMessage('Message sent successfully!');
+                document.getElementById('contact-form').reset();
+            } catch (error) {
+                console.error("Error adding contact message: ", error);
+                displayMessage('Error sending message. Please try again.', 'error');
+            }
+        };
+        
+        // Setup listener for the public events collection
+        const setupEventListener = () => {
+             const eventsCollection = collection(db, "public-events");
+             eventUnsubscribe = onSnapshot(eventsCollection, (snapshot) => {
+                 allEvents = [];
+                 snapshot.forEach(doc => {
+                     allEvents.push({ id: doc.id, ...doc.data() });
+                 });
+                 renderEvents(allEvents);
+             }, (error) => {
+                 console.error("Error fetching events: ", error);
+             });
+        };
+        
+        // Setup listener for the admin's private message collection
+        const setupMessageListener = () => {
+             if (messageUnsubscribe) messageUnsubscribe(); // Unsubscribe from previous listener
+             const messagesCollection = collection(db, "messages-for-admin");
+             messageUnsubscribe = onSnapshot(messagesCollection, (snapshot) => {
+                const messagesList = document.getElementById('messages-list');
+                messagesList.innerHTML = '';
+                if (snapshot.empty) {
+                    messagesList.innerHTML = '<p class="text-center text-gray-500">No messages submitted yet.</p>';
+                    return;
+                }
+                snapshot.forEach(doc => {
+                    const message = doc.data();
+                    const messageElement = document.createElement('div');
+                    messageElement.className = 'bg-[#2c006e] p-6 rounded-xl shadow-md border border-[#4a00b0]';
+                    messageElement.innerHTML = `
+                        <h4 class="text-xl font-bold text-[#ffd700]">${message.name}</h4>
+                        <p class="text-gray-400 text-sm mb-2">${message.email}</p>
+                        <p class="text-gray-300">${message.message}</p>
+                    `;
+                    messagesList.appendChild(messageElement);
+                });
+             }, (error) => {
+                 console.error("Error fetching messages for admin: ", error);
+             });
+        };
+        
+        // --- UI Rendering Functions ---
+
+        let allEvents = [];
+        let currentCategory = "All Categories";
+
+        const eventsContainer = document.getElementById('events-container');
+        const categoriesContainer = document.getElementById('categories-container');
+        const modalOverlay = document.getElementById('event-modal-overlay');
+
+        function renderEvents(events) {
+            let filteredEvents = events;
+            if (currentCategory !== "All Categories") {
+                filteredEvents = events.filter(event => event.category === currentCategory);
+            }
+
+            eventsContainer.innerHTML = '';
+            filteredEvents.forEach(event => {
+                const cardHtml = `
+                    <div class="event-card-container rounded-xl shadow-xl event-card-incident-style" data-event-id="${event.id}">
+                        <div class="relative overflow-hidden rounded-t-xl">
+                            <img src="${event.image}" alt="${event.title}" class="w-full h-48 object-cover">
+                            <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                                <h3 class="text-3xl font-black text-white p-4">${event.title}</h3>
+                            </div>
+                        </div>
+                        <div class="p-4 text-center">
+                            <p class="text-xl font-bold text-[#ffd700]">${event.title}</p>
+                            <p class="text-lg text-gray-300 mt-2">${event.time}</p>
+                            <p class="text-sm text-gray-500">${event.location}</p>
+                        </div>
+                    </div>
+                `;
+                eventsContainer.innerHTML += cardHtml;
+            });
+
+            document.querySelectorAll('.event-card-container').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    const eventId = e.currentTarget.dataset.eventId;
+                    const event = allEvents.find(ev => ev.id === eventId);
+                    if (event) {
+                        showEventDetails(event);
+                    }
+                });
+            });
+        }
+
+        function renderCategories() {
+            const categories = ["All Categories", "Art", "Dance", "Music", "Law", "Business"];
+            categoriesContainer.innerHTML = categories.map(cat => `
+                <button class="category-btn p-4 rounded-full text-white font-bold bg-gray-800 hover:bg-gray-700 transition-colors duration-300 ${cat === currentCategory ? 'bg-yellow-500 text-black' : ''}" data-category="${cat}">
+                    ${cat}
+                </button>
+            `).join('');
+
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    currentCategory = e.currentTarget.dataset.category;
+                    renderEvents(allEvents);
+                    document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('bg-yellow-500', 'text-black'));
+                    e.currentTarget.classList.add('bg-yellow-500', 'text-black');
+                });
+            });
+        }
+
+        function showEventDetails(event) {
+            const modalImage = document.getElementById('modal-image');
+            const modalTitle = document.getElementById('modal-title');
+            const modalSubtitle = document.getElementById('modal-subtitle');
+            const modalDate = document.getElementById('modal-date');
+            const modalLocation = document.getElementById('modal-location');
+            
+            modalImage.src = event.image;
+            modalImage.alt = event.title;
+            modalTitle.textContent = event.title;
+            modalSubtitle.textContent = event.category;
+            modalDate.textContent = event.time;
+            modalLocation.textContent = event.location;
+            
+            modalOverlay.classList.add('open');
+        }
+
+        function closeEventModal() {
+            modalOverlay.classList.remove('open');
+        }
+
+        // --- Main execution block ---
+        document.addEventListener("DOMContentLoaded", function() {
+            showPage('main-app');
+            updateNavLinks(false);
+            setupEventListener();
+            
+            document.getElementById('add-event-form').addEventListener('submit', addEvent);
+            document.getElementById('admin-login-form').addEventListener('submit', handleLogin);
+            document.getElementById('contact-form').addEventListener('submit', submitContactForm);
+            
+            document.getElementById('close-modal-btn').addEventListener('click', closeEventModal);
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) {
+                    closeEventModal();
+                }
+            });
+
+            // Initial render
+            renderCategories();
+
+            // Smooth scrolling for navigation links
+            document.querySelectorAll('.nav-link').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetId = this.getAttribute('href').substring(1);
+                    const targetElement = document.getElementById(targetId);
+                    if (targetElement) {
+                        targetElement.scrollIntoView({
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
+
+            // Countdown Timer
+            const countdownDate = new Date("November 10, 2025 00:00:00").getTime();
+            const countdownInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const distance = countdownDate - now;
+                const countdownElement = document.getElementById("countdown");
+                if (distance < 0) {
+                    clearInterval(countdownInterval);
+                    if(countdownElement) countdownElement.innerHTML = "The festival has begun!";
+                } else {
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    if(document.getElementById("days")) document.getElementById("days").innerHTML = days.toString().padStart(2, '0');
+                    if(document.getElementById("hours")) document.getElementById("hours").innerHTML = hours.toString().padStart(2, '0');
+                    if(document.getElementById("minutes")) document.getElementById("minutes").innerHTML = minutes.toString().padStart(2, '0');
+                    if(document.getElementById("seconds")) document.getElementById("seconds").innerHTML = seconds.toString().padStart(2, '0');
+                }
+            }, 1000);
+
+            // Accordion functionality for FAQ
+            document.querySelectorAll('.accordion-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const content = header.nextElementSibling;
+                    content.classList.toggle('active');
+                    const icon = header.querySelector('i');
+                    icon.classList.toggle('fa-chevron-down');
+                    icon.classList.toggle('fa-chevron-up');
+                });
+            });
+
+            // Scroll Animation
+            const elementsToAnimate = document.querySelectorAll('.scroll-animation');
+            const observerOptions = { root: null, rootMargin: '0px', threshold: 0.1 };
+            const observer = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, observerOptions);
+            elementsToAnimate.forEach(element => { observer.observe(element); });
+        });
     </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0c002b;
+            color: #e0e0e0;
+        }
+
+        /* Animated Gradient Background for Hero Section */
+        .hero-bg {
+            background: linear-gradient(-45deg, #0c002b, #1a014a, #2c006e, #4a00b0);
+            background-size: 400% 400%;
+            animation: gradient-animation 15s ease infinite;
+            height: 100vh;
+            position: relative;
+        }
+
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .hero-overlay {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .section-bg {
+            background-color: #1a014a;
+        }
+
+        .scroll-animation {
+            opacity: 0;
+            transform: translateY(50px);
+            transition: all 0.8s ease-out;
+        }
+
+        .scroll-animation.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2c006e;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ffd700;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #e5c100;
+        }
+
+        /* Message Box Styling */
+        .message-box {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            color: white;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .message-box.show {
+            opacity: 1;
+        }
+
+        .message-box.success {
+            background-color: #16a34a;
+        }
+
+        .message-box.error {
+            background-color: #dc2626;
+        }
+
+        /* Event Card Animation */
+        .event-card-container {
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+            cursor: pointer;
+        }
+
+        .event-card-container:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 10px 15px rgba(255, 215, 0, 0.3);
+        }
+
+        .event-card-incident-style {
+            background: #4a00b0;
+            background: linear-gradient(135deg, rgba(74, 0, 176, 0.8), rgba(26, 1, 74, 0.8));
+            border: 2px solid #ffd700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5), 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+
+        /* Modal styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s ease-in-out;
+        }
+
+        .modal-overlay.open {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background-color: #0c002b;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            transform: scale(0.9);
+            transition: transform 0.3s ease-in-out;
+            position: relative;
+        }
+
+        .modal-overlay.open .modal-content {
+            transform: scale(1);
+        }
+        
+        .accordion-item {
+            border-bottom: 1px solid #ffd700;
+        }
+
+        .accordion-header {
+            cursor: pointer;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            transition: background-color 0.3s;
+        }
+
+        .accordion-header:hover {
+            background-color: rgba(255, 215, 0, 0.1);
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s;
+            padding: 0 1rem;
+        }
+
+        .accordion-content.active {
+            max-height: 500px; /* Adjust as needed */
+            padding-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-[#0c002b] text-white">
+
+    <!-- Navigation Bar -->
+    <nav class="fixed top-0 left-0 w-full z-50 bg-[#0c002b] bg-opacity-70 backdrop-blur-sm p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="#" onclick="showPage('main-app')" class="text-2xl font-black text-white hover:text-[#ffd700] transition-colors">Legum Festum</a>
+            <div class="flex items-center space-x-6">
+                <ul class="flex space-x-6">
+                    <li><a href="#about" class="nav-link font-bold hover:text-[#ffd700] transition-colors">About</a></li>
+                    <li><a href="#events" class="nav-link font-bold hover:text-[#ffd700] transition-colors">Events</a></li>
+                    <li><a href="#why-participate" class="nav-link font-bold hover:text-[#ffd700] transition-colors">Experience</a></li>
+                    <li><a href="#faq" class="nav-link font-bold hover:text-[#ffd700] transition-colors">FAQ</a></li>
+                    <li><a href="#sponsors" class="nav-link font-bold hover:text-[#ffd700] transition-colors">Sponsors</a></li>
+                    <li><a href="#gallery" class="nav-link font-bold hover:text-[#ffd700] transition-colors">Gallery</a></li>
+                    <li><a href="#contact" class="nav-link font-bold hover:text-[#ffd700] transition-colors">Contact</a></li>
+                </ul>
+                <div id="auth-links">
+                    <!-- Links will be rendered here by JS based on login status -->
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Message Box -->
+    <div id="message-box" class="message-box"></div>
+
+    <!-- Main App Container -->
+    <div id="main-app">
+        <!-- Hero Section -->
+        <header id="hero" class="hero-bg flex items-center justify-center text-center text-white relative">
+            <div class="hero-overlay absolute inset-0"></div>
+            <div class="z-10 p-4">
+                <h1 class="text-6xl md:text-8xl font-black mb-4 leading-tight">LEGUM FESTUM</h1>
+                <p class="text-xl md:text-2xl font-bold mb-8">Where Justice Meets Jubilee</p>
+                <div id="countdown" class="flex justify-center space-x-4 md:space-x-8 text-white mb-8">
+                    <div class="text-center p-4 bg-white bg-opacity-10 rounded-xl w-24">
+                        <span id="days" class="block text-4xl font-black">00</span>
+                        <span class="block text-xs uppercase">Days</span>
+                    </div>
+                    <div class="text-center p-4 bg-white bg-opacity-10 rounded-xl w-24">
+                        <span id="hours" class="block text-4xl font-black">00</span>
+                        <span class="block text-xs uppercase">Hours</span>
+                    </div>
+                    <div class="text-center p-4 bg-white bg-opacity-10 rounded-xl w-24">
+                        <span id="minutes" class="block text-4xl font-black">00</span>
+                        <span class="block text-xs uppercase">Minutes</span>
+                    </div>
+                    <div class="text-center p-4 bg-white bg-opacity-10 rounded-xl w-24">
+                        <span id="seconds" class="block text-4xl font-black">00</span>
+                        <span class="block text-xs uppercase">Seconds</span>
+                    </div>
+                </div>
+                <a id="hero-register-btn" href="#register" class="bg-[#ffd700] text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-white transition-colors duration-300">Register Now</a>
+            </div>
+        </header>
+        
+        <!-- About Section -->
+        <section id="about" class="section-bg py-20 px-4 md:px-8">
+            <div class="container mx-auto max-w-4xl">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">About Legum Festum</h2>
+                <div class="text-lg leading-relaxed scroll-animation">
+                    <p class="mb-4">
+                        Legum Festum is the premier annual social and cultural festival of our esteemed law school. It is a vibrant celebration that brings together students, faculty, and legal professionals for a confluence of culture, competition, and camaraderie. More than just a festival, it's a showcase of talent, a battle of wits, and a platform for forging lasting bonds.
+                    </p>
+                    <p>
+                        Each year, we set the stage for an unforgettable experience, blending traditional cultural performances with intellectually stimulating legal competitions. From the intense Moot Court sessions and heated debates to mesmerizing dance performances and soulful musical nights, Legum Festum is an event that embodies the spirit of our institution and the pursuit of excellence. Join us as we create history and celebrate the perfect synergy of law and life.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Why Participate Section -->
+        <section id="why-participate" class="py-20 px-4 md:px-8">
+            <div class="container mx-auto">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Why Participate?</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center text-gray-300">
+                    <div class="p-6 bg-[#1a014a] rounded-xl shadow-lg scroll-animation">
+                        <i class="fa-solid fa-trophy text-5xl text-[#ffd700] mb-4"></i>
+                        <h3 class="text-2xl font-bold mb-2">Compete & Conquer</h3>
+                        <p class="text-lg">Test your skills against the best in law, art, and culture. Win prizes and gain recognition.</p>
+                    </div>
+                    <div class="p-6 bg-[#1a014a] rounded-xl shadow-lg scroll-animation" style="animation-delay: 0.2s;">
+                        <i class="fa-solid fa-people-group text-5xl text-[#ffd700] mb-4"></i>
+                        <h3 class="text-2xl font-bold mb-2">Connect & Network</h3>
+                        <p class="text-lg">Meet students from other colleges, faculty, and industry professionals. Build lasting connections.</p>
+                    </div>
+                    <div class="p-6 bg-[#1a014a] rounded-xl shadow-lg scroll-animation" style="animation-delay: 0.4s;">
+                        <i class="fa-solid fa-star text-5xl text-[#ffd700] mb-4"></i>
+                        <h3 class="text-2xl font-bold mb-2">Create Memories</h3>
+                        <p class="text-lg">Experience unforgettable performances, vibrant social nights, and a celebration of creativity.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Events Section -->
+        <section id="events" class="py-20 px-4 md:px-8">
+            <div class="container mx-auto">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Events</h2>
+                <div id="categories-container" class="flex flex-wrap justify-center gap-4 mb-12 scroll-animation">
+                    <!-- Categories will be rendered here by JS -->
+                </div>
+                <div id="events-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <!-- Event cards will be dynamically rendered here by JS -->
+                </div>
+            </div>
+        </section>
+        
+        <!-- Event Detail Modal -->
+        <div id="event-modal-overlay" class="modal-overlay">
+            <div class="modal-content">
+                <button id="close-modal-btn" class="absolute top-4 right-4 text-3xl text-white hover:text-[#ffd700] transition-colors z-20">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div class="relative rounded-t-xl overflow-hidden">
+                    <img id="modal-image" src="" alt="Event Image" class="w-full h-64 object-cover rounded-t-xl">
+                    <div class="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
+                        <h3 id="modal-title" class="text-4xl md:text-5xl font-black text-white text-center"></h3>
+                    </div>
+                </div>
+                <div class="p-6 md:p-8 text-center space-y-4">
+                    <p id="modal-subtitle" class="text-2xl font-bold text-gray-300 uppercase tracking-widest"></p>
+                    <div class="flex flex-col md:flex-row justify-center items-center space-y-2 md:space-y-0 md:space-x-8 text-xl text-[#ffd700] font-semibold">
+                        <span id="modal-date"><i class="fa-solid fa-calendar-alt mr-2"></i>Date</span>
+                        <span id="modal-location"><i class="fa-solid fa-map-marker-alt mr-2"></i>Location</span>
+                    </div>
+                    <button class="w-full md:w-auto mt-4 bg-[#ffd700] text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-white transition-colors duration-300">
+                        Register Now
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- FAQ Section -->
+        <section id="faq" class="section-bg py-20 px-4 md:px-8">
+            <div class="container mx-auto max-w-4xl">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Frequently Asked Questions</h2>
+                <div class="space-y-4">
+                    <div class="accordion-item scroll-animation">
+                        <div class="accordion-header">
+                            <span>What are the dates for Legum Festum?</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="accordion-content">
+                            <p class="text-lg text-gray-400">Legum Festum is scheduled to take place from November 10th to November 14th, 2025.</p>
+                        </div>
+                    </div>
+                    <div class="accordion-item scroll-animation" style="animation-delay: 0.2s;">
+                        <div class="accordion-header">
+                            <span>How can I register for events?</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="accordion-content">
+                            <p class="text-lg text-gray-400">You can register for individual events by clicking on the "Register Now" button on the respective event's page. The last date for registration is November 5th, 2025.</p>
+                        </div>
+                    </div>
+                    <div class="accordion-item scroll-animation" style="animation-delay: 0.4s;">
+                        <div class="accordion-header">
+                            <span>Is accommodation provided for participants?</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="accordion-content">
+                            <p class="text-lg text-gray-400">Yes, accommodation for outstation participants will be provided. Details regarding the accommodation will be sent to registered participants via email.</p>
+                        </div>
+                    </div>
+                    <div class="accordion-item scroll-animation" style="animation-delay: 0.6s;">
+                        <div class="accordion-header">
+                            <span>Are there any registration fees?</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="accordion-content">
+                            <p class="text-lg text-gray-400">Yes, there is a nominal registration fee for each event. The specific fee for each event is mentioned on its detail page.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Sponsors Section -->
+        <section id="sponsors" class="py-20 px-4 md:px-8">
+            <div class="container mx-auto">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Our Esteemed Sponsors</h2>
+                <p class="text-center text-xl text-gray-400 mb-12 scroll-animation">We extend our heartfelt gratitude to the partners who make Legum Festum possible.</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-items-center">
+                    <img src="https://placehold.co/200x80/2c006e/e0e0e0?text=Sponsor+1" alt="Sponsor Logo 1" class="scroll-animation rounded-lg">
+                    <img src="https://placehold.co/200x80/2c006e/e0e0e0?text=Sponsor+2" alt="Sponsor Logo 2" class="scroll-animation rounded-lg">
+                    <img src="https://placehold.co/200x80/2c006e/e0e0e0?text=Sponsor+3" alt="Sponsor Logo 3" class="scroll-animation rounded-lg">
+                    <img src="https://placehold.co/200x80/2c006e/e0e0e0?text=Sponsor+4" alt="Sponsor Logo 4" class="scroll-animation rounded-lg">
+                </div>
+            </div>
+        </section>
+        
+        <!-- Gallery Section -->
+        <section id="gallery" class="section-bg py-20 px-4 md:px-8">
+            <div class="container mx-auto">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Moments of Glory</h2>
+                <p class="text-center text-xl text-gray-400 mb-12 scroll-animation">A glimpse into the vibrant past of Legum Festum.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+1" alt="Gallery Photo 1" class="scroll-animation rounded-lg shadow-lg">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+2" alt="Gallery Photo 2" class="scroll-animation rounded-lg shadow-lg">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+3" alt="Gallery Photo 3" class="scroll-animation rounded-lg shadow-lg">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+4" alt="Gallery Photo 4" class="scroll-animation rounded-lg shadow-lg">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+5" alt="Gallery Photo 5" class="scroll-animation rounded-lg shadow-lg">
+                    <img src="https://placehold.co/600x400/2c006e/e0e0e0?text=Photo+6" alt="Gallery Photo 6" class="scroll-animation rounded-lg shadow-lg">
+                </div>
+            </div>
+        </section>
+        
+        <!-- Contact Section -->
+        <section id="contact" class="py-20 px-4 md:px-8">
+            <div class="container mx-auto max-w-2xl">
+                <h2 class="text-5xl font-black text-center mb-12 scroll-animation">Get in Touch</h2>
+                <form id="contact-form" class="scroll-animation">
+                    <div class="mb-4">
+                        <label for="name" class="block text-gray-400 mb-2">Name</label>
+                        <input type="text" id="name" name="name" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="email" class="block text-gray-400 mb-2">Email</label>
+                        <input type="email" id="email" name="email" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="message" class="block text-gray-400 mb-2">Message</label>
+                        <textarea id="message" name="message" rows="5" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required></textarea>
+                    </div>
+                    <div class="text-center">
+                        <button type="submit" class="bg-[#ffd700] text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-white transition-colors duration-300">Send Message</button>
+                    </div>
+                </form>
+                <div class="text-center mt-12 scroll-animation">
+                    <h3 class="text-3xl font-bold text-[#ffd700] mb-4">Contact Details</h3>
+                    <p class="text-lg">Email: <a href="mailto:info@legumfestum.com" class="hover:underline">info@legumfestum.com</a></p>
+                    <p class="text-lg">Phone: +91 98765 43210</p>
+                    <p class="text-lg mt-4">Follow us on social media:</p>
+                    <div class="flex justify-center space-x-6 mt-4 text-3xl">
+                        <a href="#" class="text-white hover:text-[#ffd700]"><i class="fab fa-facebook-f"></i></a>
+                        <a href="#" class="text-white hover:text-[#ffd700]"><i class="fab fa-twitter"></i></a>
+                        <a href="#" class="text-white hover:text-[#ffd700]"><i class="fab fa-instagram"></i></a>
+                        <a href="#" class="text-white hover:text-[#ffd700]"><i class="fab fa-linkedin-in"></i></a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="py-8 bg-[#0c002b] text-center text-gray-500">
+            <p>&copy; 2025 Legum Festum. All Rights Reserved.</p>
+        </footer>
+    </div> <!-- End of Main App Container -->
+
+    <!-- Admin Login Page -->
+    <div id="admin-login-page" class="hidden min-h-screen flex items-center justify-center bg-[#0c002b] text-white">
+        <div class="w-full max-w-md p-8 bg-[#1a014a] rounded-xl shadow-lg border-2 border-[#ffd700]">
+            <h2 class="text-4xl font-black text-center mb-6">Admin Login</h2>
+            <form id="admin-login-form">
+                <div class="mb-4">
+                    <label for="admin-email" class="block text-gray-400 mb-2">Email</label>
+                    <input type="email" id="admin-email" name="email" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                </div>
+                <div class="mb-6">
+                    <label for="admin-password" class="block text-gray-400 mb-2">Password</label>
+                    <input type="password" id="admin-password" name="password" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                </div>
+                <div class="text-center">
+                    <button type="submit" class="w-full bg-[#ffd700] text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-white transition-colors duration-300">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Page -->
+    <div id="admin-dashboard-page" class="hidden min-h-screen bg-[#0c002b] text-white py-20 px-4 md:px-8">
+        <div class="container mx-auto">
+            <h2 class="text-5xl font-black text-center mb-12">Admin Dashboard</h2>
+            
+            <!-- Add New Event Section -->
+            <section class="max-w-4xl mx-auto p-8 bg-[#1a014a] rounded-xl shadow-lg border-2 border-[#ffd700] mb-12">
+                <h3 class="text-3xl font-bold mb-6 text-center text-[#ffd700]">Add New Event</h3>
+                <form id="add-event-form">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="event-title" class="block text-gray-400 mb-2">Event Title</label>
+                            <input type="text" id="event-title" name="title" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                        </div>
+                        <div>
+                            <label for="event-category" class="block text-gray-400 mb-2">Category</label>
+                            <select id="event-category" name="category" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                                <option value="" disabled selected>Select a category</option>
+                                <option value="Law">Law</option>
+                                <option value="Dance">Dance</option>
+                                <option value="Art">Art</option>
+                                <option value="Music">Music</option>
+                                <option value="Business">Business</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="event-time" class="block text-gray-400 mb-2">Time</label>
+                            <input type="text" id="event-time" name="time" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                        </div>
+                        <div>
+                            <label for="event-location" class="block text-gray-400 mb-2">Location</label>
+                            <input type="text" id="event-location" name="location" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="event-image" class="block text-gray-400 mb-2">Image URL</label>
+                        <input type="text" id="event-image" name="image" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="event-description" class="block text-gray-400 mb-2">Description</label>
+                        <textarea id="event-description" name="description" rows="3" class="w-full p-3 rounded-lg bg-[#2c006e] border border-transparent focus:outline-none focus:ring-2 focus:ring-[#ffd700]" required></textarea>
+                    </div>
+                    <div class="text-center">
+                        <button type="submit" class="bg-[#ffd700] text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-white transition-colors duration-300">Add Event</button>
+                    </div>
+                </form>
+            </section>
+            
+            <!-- Submitted Messages Section -->
+            <section class="max-w-4xl mx-auto p-8 bg-[#1a014a] rounded-xl shadow-lg border-2 border-[#ffd700] mb-12">
+                <h3 class="text-3xl font-bold mb-6 text-center text-[#ffd700]">Submitted Messages</h3>
+                <div id="messages-list" class="space-y-6">
+                    <!-- Messages will be loaded here from Firebase -->
+                </div>
+            </section>
+        </div>
+    </div>
+
 </body>
 </html>
